@@ -11,6 +11,10 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 import scapy.all as scapy
 from dotenv import load_dotenv
+from random import randint
+from platform import system as system_name
+from subprocess import call as system_call
+from urllib.request import urlopen
 
 load_dotenv()
 
@@ -132,7 +136,7 @@ def verify_no_packet_loss(destination, count=10):
         if result.returncode == 0:
             packet_loss_percentage = parse_packet_loss(result.stdout)
             if packet_loss_percentage == 0.0:
-                packet_loss_result.config(text="Connection established with no packet loss.", fg=LABEL_COLOR)
+                packet_loss_result.config(text="Connection established with no packet loss.", fg="green")
             else:
                 packet_loss_result.config(text=f"Packet loss detected: {packet_loss_percentage}%", fg="red")
         else:
@@ -154,6 +158,85 @@ def run_verify_no_packet_loss():
     verify_no_packet_loss(destination_host1)
     # Schedule the function to run again after 5000 milliseconds (5 seconds)
     windows.after(20000, run_verify_no_packet_loss)
+
+
+def perform_dns_leak_test():
+    def ping1(host):
+        fn = open(os.devnull, 'w')
+        param = '-n' if system_name().lower() == 'windows' else '-c'
+        command = ['ping', param, '1', host]
+        retcode = system_call(command, stdout=fn, stderr=subprocess.STDOUT)
+        fn.close()
+        return retcode == 0
+
+
+    leak_id = randint(1000000, 9999999)
+    for x in range(0, 10):
+        ping1('.'.join([str(x), str(leak_id), "bash.ws"]))
+
+    response = urlopen("https://bash.ws/dnsleak/test/"+str(leak_id)+"?json")
+    data = response.read().decode("utf-8")
+    parsed_data = json.loads(data)
+
+
+    result_text = "RESULT OF DNS LEAK TESTING:\n"
+
+    print("Your IP:")
+    for dns_server in parsed_data:
+        if dns_server['type'] == "ip":
+            if dns_server['country_name']:
+                if dns_server['asn']:
+                    print(dns_server['ip']+" ["+dns_server['country_name']+", " +
+                        dns_server['asn']+"]")
+                    result_text += f"{dns_server['ip']} [{dns_server['country_name']}, {dns_server['asn']}]\n"
+                else:
+                    print(dns_server['ip']+" ["+dns_server['country_name']+"]")
+                    result_text += f"{dns_server['ip']} [{dns_server['country_name']}]\n"
+            else:
+                print(dns_server['ip'])
+                result_text += f"{dns_server['ip']}\n"
+
+    
+
+    servers = 0
+    for dns_server in parsed_data:
+        if dns_server['type'] == "dns":
+            servers = servers + 1
+
+    if servers == 0:
+        print("No DNS servers found")
+        result_text += f"NO DNS SERVERS FOUND\n"
+        dns_leak_result.config(text=result_text, fg="red")
+    else:
+        print("You use "+str(servers)+" DNS servers:")
+        result_text += f"YOU USE {str(servers)} DNS SERVERS:\n"
+        dns_leak_result.config(text=result_text, fg="green")
+        for dns_server in parsed_data:
+            if dns_server['type'] == "dns":
+                if dns_server['country_name']:
+                    if dns_server['asn']:
+                        print(dns_server['ip']+" ["+dns_server['country_name'] +
+                            ", " + dns_server['asn']+"]")
+                        result_text += f"{dns_server['ip']} [{dns_server['country_name']}, {dns_server['asn']}]\n"
+                    else:
+                        print(dns_server['ip']+" ["+dns_server['country_name']+"]")
+                        result_text += f"{dns_server['ip']} [{dns_server['country_name']}\n"
+                else:
+                    print(dns_server['ip'])
+                    result_text += f"{dns_server['ip']}\n"
+
+    print("Conclusion:")
+    result_text+=f"CONCLUSION:\n"
+    for dns_server in parsed_data:
+        if dns_server['type'] == "conclusion":
+            if dns_server['ip']:
+                print(dns_server['ip'])
+                result_text += f"{dns_server['ip']}\n"
+
+
+    dns_leak_result.config(text=result_text, fg="orange")
+
+
 
 
 
@@ -203,5 +286,10 @@ packet_loss_result.pack()
 run_verify_no_packet_loss_button = tk.Button(windows, text="Run Verify No Packet Loss", command=run_verify_no_packet_loss)
 run_verify_no_packet_loss_button.pack()
 
+dns_leak_result = tk.Label(windows, text="RESULT OF DNS LEAK TESTING:\n")
+dns_leak_result.pack()
+
+dns_leak_result_button = tk.Button(windows, text="RUN DNS Leak Test", command=perform_dns_leak_test)
+dns_leak_result_button.pack()
 
 windows.mainloop()
